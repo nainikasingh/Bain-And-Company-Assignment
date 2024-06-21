@@ -2,140 +2,78 @@
 # -*- coding: utf-8 -*-
 
 
-import csv
-from datetime import datetime
-from time import strptime
-import numpy as np
 import pandas as pd
+from datetime import datetime
 from datacheck import question
 from visualization import usage_stats, usage_plot
 from IPython.display import display
 
-file_in  = 'trip_data.csv'
+# Filenames
+file_in = 'trip_data.csv'
 file_out = 'new_trip_data.csv'
+station_file = 'station_data.csv'
+trip_out1 = 'trip_summary.csv'
+trip_out2 = 'data_y1_y2_summary.csv'
 
-#with open(file_out, 'w') as f_out, open(file_in, 'r') as f_in:
-#    in_reader = csv.reader(f_in)
-#    out_writer = csv.writer(f_out)
-#
-#    while True:
-#        datarow = next(in_reader)
-#        if datarow[2][:9] == '10/1/2013':
-#            break
-#        out_writer.writerow(datarow)
-#        
-        
-        
-sample_data = pd.read_csv('new_trip_data.csv')
-
+# Load sample data
+sample_data = pd.read_csv(file_out)
 display(sample_data.head())
 
-    
-
-station_info = pd.read_csv('station_data.csv')
+# Load station data
+station_info = pd.read_csv(station_file)
 display(station_info.head())
 
-def create_station_mapping(station_data):
+def create_station_mapping(station_data_file):
     """
     Create a mapping from station IDs to cities, returning the
     result as a dictionary.
     """
-    station_map = {}
-    for data_file in station_data:
-        with open(data_file, 'r') as f_in:
-            
-            weather_reader = csv.DictReader(f_in)
+    station_df = pd.read_csv(station_data_file)
+    return station_df.set_index('Id')['City'].to_dict()
 
-            for row in weather_reader:
-                station_map[row['Id']] = row['City']
-    return station_map
-
-
-def summarise_data(trip_in, station_data, trip_out):
-   
-    station_map = create_station_mapping(station_data)
+def summarise_data(trip_file, station_data_file, trip_out):
+    # Create station mapping
+    station_map = create_station_mapping(station_data_file)
     
-    with open(trip_out, 'w') as f_out:
-        out_colnames = ['Duration', 'start_date', 'start_year',
-                        'start_month', 'start_hour', 'weekday',
-                        'start_city', 'end_city', 'subscription_type']        
-        trip_writer = csv.DictWriter(f_out, fieldnames = out_colnames)
-        trip_writer.writeheader()
-        
-        for data_file in trip_in:
-            with open(data_file, 'r') as f_in:
-                trip_reader = csv.DictReader(f_in)
-
-                for row in trip_reader:
-                    new_point = {}
-                    
-                    new_point['Duration'] = float(row['Duration'])
-                    
-                    trip_date = datetime.strptime(row['Start Date'], '%d/%m/%Y %H:%M')
-                    new_point['start_date']  = trip_date.strftime('%Y-%m-%d')
-                    new_point['start_year']  = trip_date.strftime('%Y')
-                    new_point['start_month'] = trip_date.strftime('%m')
-                    new_point['start_hour']  = trip_date.strftime('%H')
-                    new_point['weekday']     = trip_date.strftime('%d')
-                    
-                    new_point['start_city'] = station_map[row['Start Station']]
-                    new_point['end_city'] = station_map[row['End Station']]
-                    if 'Subscription Type' in row:
-                        new_point['subscription_type'] = row['Subscription Type']
-                    else:
-                        new_point['subscription_type'] = row['Subscriber Type']
-
-                    trip_writer.writerow(new_point)
-
+    # Read trip data
+    trip_df = pd.read_csv(trip_file)
     
+    # Process date fields and map station IDs to cities
+    trip_df['start_date'] = pd.to_datetime(trip_df['Start Date'], format='%d/%m/%Y %H:%M')
+    trip_df['start_year'] = trip_df['start_date'].dt.year
+    trip_df['start_month'] = trip_df['start_date'].dt.month
+    trip_df['start_hour'] = trip_df['start_date'].dt.hour
+    trip_df['weekday'] = trip_df['start_date'].dt.weekday
+    trip_df['start_city'] = trip_df['Start Station'].map(station_map)
+    trip_df['end_city'] = trip_df['End Station'].map(station_map)
     
-station_data = ['station_data.csv']
-trip_in = ['trip_data.csv']
-trip_out = 'trip_summary.csv'
-summarise_data(trip_in, station_data, trip_out)
+    # Select and rename columns
+    trip_df = trip_df.rename(columns={'Duration': 'duration', 'Subscription Type': 'subscription_type', 'Subscriber Type': 'subscription_type'})
+    trip_df = trip_df[['duration', 'start_date', 'start_year', 'start_month', 'start_hour', 'weekday', 'start_city', 'end_city', 'subscription_type']]
+    
+    # Save to new CSV
+    trip_df.to_csv(trip_out, index=False)
 
-sample_data = pd.read_csv(trip_out)
+# Summarize data
+summarise_data(file_in, station_file, trip_out1)
+
+# Load and display summarized data
+sample_data = pd.read_csv(trip_out1)
 display(sample_data.head())
 
 question(sample_data)
 
-    
-
-trip_data = pd.read_csv('trip_summary.csv')
-
+# Generate usage stats and plots
+trip_data = pd.read_csv(trip_out1)
 usage_stats(trip_data)
-
-
 usage_plot(trip_data, 'subscription_type')
+usage_plot(trip_data, 'duration')
+usage_plot(trip_data, 'duration', ['duration < 360'])
+usage_plot(trip_data, 'duration', ['duration < 360'], boundary=0, bin_width=5)
 
-usage_plot(trip_data, 'Duration')
+# Summarize additional data
+summarise_data(file_in, station_file, trip_out2)
 
-usage_plot(trip_data, 'Duration', ['Duration < 360'])
-
-
-usage_plot(trip_data, 'Duration', ['Duration < 360'], boundary = 0, bin_width = 5)
-
-
-station_data = ['station_data.csv']
-trip_in = ['trip_data.csv']
-trip_out = 'data_y1_y2_summary.csv'
-
-summarise_data(trip_in, station_data, trip_out)
-
-
-trip_data = pd.read_csv('data_y1_y2_summary.csv')
+# Load and display additional summarized data
+trip_data = pd.read_csv(trip_out2)
 display(trip_data.head())
-#
-#usage_stats(trip_data)
-#usage_plot(trip_data)
-
-
-
-
-
-
-
-
-
-
-
